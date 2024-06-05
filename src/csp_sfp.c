@@ -48,33 +48,33 @@ static inline sfp_header_t * csp_sfp_header_remove(csp_packet_t * packet) {
 	return header;
 }
 
-int csp_sfp_send_own_memcpy(csp_conn_t * conn, const void * data, unsigned int totalsize, unsigned int mtu, uint32_t timeout, csp_memcpy_fnc_t memcpyfcn) {
-	if (mtu == 0) {
+int csp_sfp_send(csp_conn_t * conn, const csp_sfp_read_t * user, uint32_t totalsize, uint32_t mtu) {
+	if ((mtu == 0) || (mtu > (CSP_BUFFER_SIZE - sizeof(sfp_header_t)))) {
 		return CSP_ERR_INVAL;
 	}
 
-	unsigned int count = 0;
+	uint32_t count = 0;
 	while (count < totalsize) {
 
 		sfp_header_t * sfp_header;
 
 		/* Allocate packet */
-		csp_packet_t * packet = csp_buffer_get(mtu + sizeof(*sfp_header));
+		csp_packet_t * packet = csp_buffer_get(0);
 		if (packet == NULL) {
 			return CSP_ERR_NOMEM;
 		}
 
 		/* Calculate sending size */
-		unsigned int size = totalsize - count;
+		uint16_t size = totalsize - count;
 		if (size > mtu) {
 			size = mtu;
 		}
 
-		/* Print debug */
-		//csp_print("%s: %d:%d, sending at %p size %u\n", __FUNCTION__, csp_conn_src(conn), csp_conn_sport(conn), ((uint8_t *)data) + count, size);
-
 		/* Copy data */
-		(memcpyfcn)((csp_memptr_t)(uintptr_t)packet->data, (csp_memptr_t)(uintptr_t)(((uint8_t *)data) + count), size);
+		if (size != user->read(user->data, packet->data, count, size)) {
+			csp_buffer_free(packet);
+			return CSP_ERR_SFP;
+		}
 		packet->length = size;
 
 		/* Set fragment flag */
@@ -95,9 +95,8 @@ int csp_sfp_send_own_memcpy(csp_conn_t * conn, const void * data, unsigned int t
 	return CSP_ERR_NONE;
 }
 
-int csp_sfp_recv_fp(csp_conn_t * conn, void ** return_data, int * return_datasize, uint32_t timeout, csp_packet_t * first_packet) {
+int csp_sfp_recv_fp(csp_conn_t * conn, const csp_sfp_write_t * user, uint32_t * return_datasize, uint32_t timeout, csp_packet_t * first_packet) {
 
-	*return_data = NULL; /* Allow caller to assume csp_free() can always be called when dataout is non-NULL */
 	*return_datasize = 0;
 
 	/* Get first packet from user, or from connection */
@@ -111,7 +110,6 @@ int csp_sfp_recv_fp(csp_conn_t * conn, void ** return_data, int * return_datasiz
 		packet = first_packet;
 	}
 
-	uint8_t * data = NULL;
 	uint32_t datasize = 0;
 	uint32_t data_offset = 0;
 	int error = CSP_ERR_TIMEDOUT;
@@ -129,7 +127,7 @@ int csp_sfp_recv_fp(csp_conn_t * conn, void ** return_data, int * return_datasiz
 		//csp_print("%s: %u:%u, fragment %" PRIu32 "/%" PRIu32 "\n",  __FUNCTION__, packet->id.src, packet->id.sport, sfp_header->offset + packet->length, sfp_header->totalsize);
 
 		/* Consistency check */
-		if (sfp_header->offset != data_offset) {
+		if ((sfp_header->offset != data_offset) || (packet->length == 0) || (packet->length > (sizeof(packet->data) - sizeof(* sfp_header)))) {
 			//csp_print("%s: %u:%u, invalid message, offset %" PRIu32 " (expected %" PRIu32 "), length: %u, totalsize %" PRIu32 "\n", __FUNCTION__, packet->id.src, packet->id.sport, sfp_header->offset, data_offset, packet->length, sfp_header->totalsize);
 			csp_buffer_free(packet);
 
@@ -137,21 +135,19 @@ int csp_sfp_recv_fp(csp_conn_t * conn, void ** return_data, int * return_datasiz
 			goto error;
 		}
 
-		/* Allocate memory */
-		if (data == NULL) {
+		/* Set total expected size */
+		if (datasize == 0) {
 			datasize = sfp_header->totalsize;
-			data = malloc(datasize);
-			if (data == NULL) {
-				//csp_print("%s: %u:%u, malloc(%" PRIu32 ") failed\n", __FUNCTION__, packet->id.src, packet->id.sport, datasize);
+			if (datasize == 0) {
 				csp_buffer_free(packet);
 
-				error = CSP_ERR_NOMEM;
+				error = CSP_ERR_SFP;
 				goto error;
 			}
 		}
 
-		/* Consistency check */
-		if (((data_offset + packet->length) > datasize) || (datasize != sfp_header->totalsize)) {
+		/* Copy data to output */
+		if (packet->length != user->write(user->data, packet->data, data_offset, packet->length, sfp_header->totalsize)) {
 			//csp_print("%s: %u:%u, invalid size, sfp.offset: %" PRIu32 ", length: %u, total: %" PRIu32 " / %" PRIu32 "\n", __FUNCTION__, packet->id.src, packet->id.sport, sfp_header->offset, packet->length, datasize, sfp_header->totalsize);
 			csp_buffer_free(packet);
 
@@ -159,15 +155,12 @@ int csp_sfp_recv_fp(csp_conn_t * conn, void ** return_data, int * return_datasiz
 			goto error;
 		}
 
-		/* Copy data to output */
-		memcpy(data + data_offset, packet->data, packet->length);
 		data_offset += packet->length;
 
 		if (data_offset >= datasize) {
 			// transfer complete
 			csp_buffer_free(packet);
 
-			*return_data = data;  // must be freed by csp_free()
 			*return_datasize = datasize;
 			return CSP_ERR_NONE;
 		}
@@ -186,6 +179,5 @@ int csp_sfp_recv_fp(csp_conn_t * conn, void ** return_data, int * return_datasiz
 	} while ((packet = csp_read(conn, timeout)) != NULL);
 
 error:
-	free(data);
 	return error;
 }
