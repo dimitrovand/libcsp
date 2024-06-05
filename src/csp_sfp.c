@@ -65,13 +65,13 @@ int csp_sfp_send(csp_conn_t * conn, const csp_sfp_read_t * user, uint32_t totals
 		}
 
 		/* Calculate sending size */
-		uint16_t size = totalsize - count;
+		uint32_t size = totalsize - count;
 		if (size > mtu) {
 			size = mtu;
 		}
 
 		/* Copy data */
-		if (size != user->read(user->data, packet->data, count, size)) {
+		if (size != user->read(user->data, packet->data, count, (uint16_t)size)) {
 			csp_buffer_free(packet);
 			return CSP_ERR_SFP;
 		}
