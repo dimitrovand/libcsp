@@ -17,6 +17,8 @@
 #elif (CSP_ZEPHYR)
     #include <zephyr/kernel.h>
     typedef struct k_sem csp_bin_sem_t;
+#elif (CSP_BAREMETAL)
+    typedef char csp_bin_sem_t;
 #endif
 
 /**

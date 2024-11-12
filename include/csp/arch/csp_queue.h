@@ -28,6 +28,17 @@ typedef StaticQueue_t csp_static_queue_t;
 #include <zephyr/kernel.h>
 typedef struct k_msgq * csp_queue_handle_t;
 typedef struct k_msgq csp_static_queue_t;
+#elif (CSP_BAREMETAL)
+typedef struct csp_queue_s {
+    void * buffer;
+    int size;
+    int item_size;
+    int items;
+    int in;
+    int out;
+} csp_queue_t;
+typedef csp_queue_t * csp_queue_handle_t;
+typedef csp_queue_t csp_static_queue_t;
 #else
 typedef struct pthread_queue_s pthread_queue_t; // Opaque pointer
 typedef pthread_queue_t * csp_queue_handle_t;
