@@ -8,7 +8,7 @@
 #include <csp/interfaces/csp_if_kiss.h>
 #include <csp/drivers/usart.h>
 #include <csp/drivers/can_socketcan.h>
-#include <endian.h>
+#include <csp/arch/csp_endian.h>
 
 #define SOCKET_CAPSULE     "csp_socket_t"
 #define CONNECTION_CAPSULE "csp_conn_t"

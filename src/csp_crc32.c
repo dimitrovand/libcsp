@@ -3,7 +3,7 @@
 #include <csp/csp_crc32.h>
 #include <csp/csp_id.h>
 
-#include <endian.h>
+#include <csp/arch/csp_endian.h>
 
 #ifdef __AVR__
 #include <avr/pgmspace.h>
